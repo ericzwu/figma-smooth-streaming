@@ -5,8 +5,8 @@ const DEFAULT_SETTINGS = {
     "I am currently extracting the key financial statement data for Nvidia from the 10-K document to build a reliable and accurate 3-statement model.",
   textWidth: 180,
   viewportHeight: 120,
-  fontFamily: "Geist",
-  fontStyle: "Regular",
+  fontFamily: "",
+  fontStyle: "",
   fontSize: 10,
   lineHeightPx: null,
   letterSpacingPx: 0.2,
@@ -164,10 +164,10 @@ const ui = String.raw`
 
     <div class="grid">
       <label>Font family
-        <input name="fontFamily" type="text" />
+        <select name="fontFamily"></select>
       </label>
       <label>Font style
-        <input name="fontStyle" type="text" />
+        <select name="fontStyle"></select>
       </label>
     </div>
 
@@ -225,6 +225,9 @@ const ui = String.raw`
 
   <script>
     var hasValidSource = false;
+    var fontStylesByFamily = {};
+    var availableFamilyNames = [];
+    var pendingHydrateSettings = null;
 
     parent.postMessage(
       {
@@ -244,6 +247,16 @@ const ui = String.raw`
       if (pluginMessage.type === "hydrate-settings") {
         hydrateForm(pluginMessage.settings || {});
         setLoading(false, "");
+        return;
+      }
+
+      if (pluginMessage.type === "available-fonts") {
+        setAvailableFonts(pluginMessage.fonts || []);
+        if (pendingHydrateSettings) {
+          const nextSettings = pendingHydrateSettings;
+          pendingHydrateSettings = null;
+          hydrateForm(nextSettings);
+        }
         return;
       }
 
@@ -315,12 +328,12 @@ const ui = String.raw`
     }
 
     function hydrateForm(settings) {
+      pendingHydrateSettings = availableFamilyNames.length === 0 ? settings : null;
       const form = document.getElementById("form");
       setValue(form, "text", settings.text);
       setValue(form, "textWidth", settings.textWidth);
       setValue(form, "viewportHeight", settings.viewportHeight);
-      setValue(form, "fontFamily", settings.fontFamily);
-      setValue(form, "fontStyle", settings.fontStyle);
+      setFontSelection(settings.fontFamily, settings.fontStyle);
       setValue(form, "fontSize", settings.fontSize);
       setValue(form, "lineHeightPx", settings.lineHeightPx === null ? "" : settings.lineHeightPx);
       setValue(form, "letterSpacingPx", settings.letterSpacingPx);
@@ -336,8 +349,7 @@ const ui = String.raw`
       const form = document.getElementById("form");
       setValue(form, "text", settings.text);
       setValue(form, "textWidth", settings.textWidth);
-      setValue(form, "fontFamily", settings.fontFamily);
-      setValue(form, "fontStyle", settings.fontStyle);
+      setFontSelection(settings.fontFamily, settings.fontStyle);
       setValue(form, "fontSize", settings.fontSize);
       setValue(form, "lineHeightPx", settings.lineHeightPx === null ? "" : settings.lineHeightPx);
       setValue(form, "letterSpacingPx", settings.letterSpacingPx);
@@ -351,6 +363,85 @@ const ui = String.raw`
       }
 
       field.value = value == null ? "" : String(value);
+    }
+
+    function setAvailableFonts(fonts) {
+      const familyField = document.querySelector('select[name="fontFamily"]');
+      const styleField = document.querySelector('select[name="fontStyle"]');
+      fontStylesByFamily = {};
+
+      for (let i = 0; i < fonts.length; i += 1) {
+        const family = fonts[i].family;
+        const style = fonts[i].style;
+
+        if (!fontStylesByFamily[family]) {
+          fontStylesByFamily[family] = [];
+        }
+
+        if (fontStylesByFamily[family].indexOf(style) === -1) {
+          fontStylesByFamily[family].push(style);
+        }
+      }
+
+      availableFamilyNames = Object.keys(fontStylesByFamily).sort();
+      familyField.innerHTML = "";
+
+      for (let i = 0; i < availableFamilyNames.length; i += 1) {
+        familyField.add(new Option(availableFamilyNames[i], availableFamilyNames[i]));
+      }
+
+      familyField.onchange = function () {
+        refreshStyleOptions(familyField.value, styleField.value);
+      };
+
+      if (availableFamilyNames.length === 0) {
+        familyField.add(new Option("No fonts available", ""));
+        styleField.innerHTML = "";
+        styleField.add(new Option("No styles available", ""));
+        return;
+      }
+
+      if (pendingHydrateSettings) {
+        const nextSettings = pendingHydrateSettings;
+        pendingHydrateSettings = null;
+        hydrateForm(nextSettings);
+        return;
+      }
+
+      refreshStyleOptions(familyField.value || availableFamilyNames[0], styleField.value);
+    }
+
+    function refreshStyleOptions(family, preferredStyle) {
+      const familyField = document.querySelector('select[name="fontFamily"]');
+      const styleField = document.querySelector('select[name="fontStyle"]');
+      const styles = (fontStylesByFamily[family] || []).slice().sort();
+
+      familyField.value = family;
+      styleField.innerHTML = "";
+
+      if (styles.length === 0) {
+        styleField.add(new Option("No styles available", ""));
+        return;
+      }
+
+      for (let i = 0; i < styles.length; i += 1) {
+        styleField.add(new Option(styles[i], styles[i]));
+      }
+
+      if (styles.indexOf(preferredStyle) !== -1) {
+        styleField.value = preferredStyle;
+      } else if (styles.length > 0) {
+        styleField.value = styles[0];
+      }
+    }
+
+    function setFontSelection(family, style) {
+      if (availableFamilyNames.length === 0) {
+        return;
+      }
+
+      const nextFamily = fontStylesByFamily[family] ? family : availableFamilyNames[0];
+      refreshStyleOptions(nextFamily, style);
     }
 
     function setLoading(isLoading, message) {
@@ -443,7 +534,8 @@ initPlugin();
 async function initPlugin() {
   figma.showUI(ui, { width: 380, height: 760, title: "Smooth Stream Scroll" });
 
-  const savedSettings = await loadSavedSettings();
+  const availableFonts = await getAvailableFontsForUi();
+  const savedSettings = normalizeSettingsForAvailableFonts(await loadSavedSettings(), availableFonts);
   postSelectionSourceToUi();
   figma.on("selectionchange", postSelectionSourceToUi);
 
@@ -453,6 +545,10 @@ async function initPlugin() {
     }
 
     if (msg.type === "ui-ready") {
+      figma.ui.postMessage({
+        type: "available-fonts",
+        fonts: availableFonts
+      });
       figma.ui.postMessage({
         type: "hydrate-settings",
         settings: savedSettings
@@ -506,6 +602,7 @@ async function initPlugin() {
 async function generateSmoothTextSet(settings) {
   validateSettings(settings);
   const source = buildGenerationSource(settings);
+  await loadFontForGeneration(source.fontName);
 
   const revealPlan = buildRevealPlan(source.text, settings.streamMode, settings.streamCount);
   const revealStates = revealPlan.states;
@@ -773,6 +870,72 @@ function buildGenerationSource(settings) {
     },
     fills: [makeSolidPaint(settings.textColor)]
   };
+}
+
+async function getAvailableFontsForUi() {
+  const availableFonts = await figma.listAvailableFontsAsync();
+  const fonts = [];
+
+  for (let i = 0; i < availableFonts.length; i += 1) {
+    const font = availableFonts[i].fontName ? availableFonts[i].fontName : availableFonts[i];
+    fonts.push({
+      family: font.family,
+      style: font.style
+    });
+  }
+
+  fonts.sort(function (a, b) {
+    if (a.family === b.family) {
+      return a.style.localeCompare(b.style);
+    }
+
+    return a.family.localeCompare(b.family);
+  });
+
+  return fonts;
+}
+
+function normalizeSettingsForAvailableFonts(settings, availableFonts) {
+  const normalized = mergeSettings(settings);
+  const familyToStyles = {};
+
+  for (let i = 0; i < availableFonts.length; i += 1) {
+    const font = availableFonts[i];
+    if (!familyToStyles[font.family]) {
+      familyToStyles[font.family] = [];
+    }
+
+    if (familyToStyles[font.family].indexOf(font.style) === -1) {
+      familyToStyles[font.family].push(font.style);
+    }
+  }
+
+  const families = Object.keys(familyToStyles).sort();
+  if (families.length === 0) {
+    return normalized;
+  }
+
+  const nextFamily = familyToStyles[normalized.fontFamily] ? normalized.fontFamily : families[0];
+  const styles = familyToStyles[nextFamily].slice().sort();
+  const nextStyle = styles.indexOf(normalized.fontStyle) !== -1 ? normalized.fontStyle : styles[0];
+
+  normalized.fontFamily = nextFamily;
+  normalized.fontStyle = nextStyle;
+  return normalized;
+}
+
+async function loadFontForGeneration(fontName) {
+  try {
+    await figma.loadFontAsync(fontName);
+  } catch (error) {
+    throw new Error(
+      'Could not load "' +
+        fontName.family +
+        ' / ' +
+        fontName.style +
+        '". Choose a different font family or style from the dropdowns.'
+    );
+  }
 }
 
 function createStyledTextNode(source, text) {
