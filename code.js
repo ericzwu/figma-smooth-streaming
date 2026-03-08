@@ -1,4 +1,5 @@
 const STORAGE_KEY = "smooth-stream-scroll:last-settings";
+const COMPONENT_SET_MAX_HEIGHT = 500;
 
 const DEFAULT_SETTINGS = {
   text:
@@ -207,6 +208,8 @@ const ui = String.raw`
       box-shadow: inset 0 0 0 1px var(--border);
       display: grid;
       gap: 7px;
+      max-height: 200px;
+      overflow-y: auto;
     }
 
     .source-card[data-state="missing"] {
@@ -254,7 +257,7 @@ const ui = String.raw`
     }
 
     .button-primary:hover:not([disabled]) {
-      background: linear-gradient(180deg, #202020, #101010);
+      background: linear-gradient(180deg, #262626, #141414);
     }
 
     button[disabled] {
@@ -346,7 +349,7 @@ const ui = String.raw`
           <div id="sourceInfo" class="source-card" data-state="missing">Select a text layer or a frame containing a text layer.</div>
         </label>
 
-        <button id="refreshSource" class="button-secondary" type="button">Populate from selection</button>
+        <button id="refreshSource" class="button-primary" type="button">Populate from selection</button>
       </section>
 
       <section class="section">
@@ -742,9 +745,6 @@ const ui = String.raw`
         "px</div>" +
         '<div class="source-row"><span class="source-label">Style:</span>' +
         escapeHtml(source.styleDescription) +
-        "</div>" +
-        '<div class="source-row"><span class="source-label">Preview:</span>' +
-        escapeHtml(source.previewText) +
         "</div>";
     }
 
@@ -770,7 +770,7 @@ const BLUR_IN_RADIUS = 6;
 initPlugin();
 
 async function initPlugin() {
-  figma.showUI(ui, { width: 380, height: 760, title: "Smooth Stream Scroll" });
+  figma.showUI(ui, { width: 380, height: 680, title: "Smooth Stream Scroll" });
 
   const availableFonts = await getAvailableFontsForUi();
   const savedSettings = normalizeSettingsForAvailableFonts(await loadSavedSettings(), availableFonts);
@@ -926,6 +926,10 @@ async function generateSmoothTextSet(settings) {
 
   const smoothSet = figma.combineAsVariants(wrappers, parent);
   smoothSet.name = generatedSetName;
+  smoothSet.clipsContent = true;
+  if (smoothSet.height > COMPONENT_SET_MAX_HEIGHT) {
+    smoothSet.resizeWithoutConstraints(smoothSet.width, COMPONENT_SET_MAX_HEIGHT);
+  }
   smoothSet.x = startPoint.x;
   smoothSet.y = startPoint.y;
 
@@ -1437,8 +1441,7 @@ function getSelectionSourceSummary() {
       selectionName: selection.name,
       textNodeName: textNode.name,
       textWidth: round2(textNode.width),
-      styleDescription: styleDescription,
-      previewText: truncateText(textNode.characters, 120)
+      styleDescription: styleDescription
     };
   } catch (error) {
     return {
@@ -1559,15 +1562,6 @@ function getStyleDescription(textNode) {
 
   const fontName = getResolvedFontName(textNode);
   return "Unlinked: " + fontName.family + " / " + fontName.style;
-}
-
-function truncateText(text, maxLength) {
-  const normalized = String(text).replace(/\s+/g, " ").trim();
-  if (normalized.length <= maxLength) {
-    return normalized;
-  }
-
-  return normalized.slice(0, maxLength - 1) + "\u2026";
 }
 
 function getLineHeightPx(lineHeight, fontSize) {
