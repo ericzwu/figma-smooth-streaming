@@ -94,8 +94,20 @@ const ui = String.raw`
       <label>Letter spacing px
         <input name="letterSpacingPx" type="number" step="0.1" value="0.2" />
       </label>
-      <label>Words per step
-        <input name="wordsPerStep" type="number" min="1" value="2" />
+      <label>Stream
+        <select name="streamMode">
+          <option value="words">Words</option>
+          <option value="letters">Letters</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="grid">
+      <label>Every
+        <input name="streamCount" type="number" min="1" value="2" />
+      </label>
+      <label>Speed ms per unit
+        <input name="speedMs" type="number" min="1" value="80" />
       </label>
     </div>
 
@@ -105,15 +117,6 @@ const ui = String.raw`
       </label>
       <label>Component set name
         <input name="setName" type="text" value="Smooth streaming scroll" />
-      </label>
-    </div>
-
-    <div class="grid">
-      <label>After-delay ms
-        <input name="delayMs" type="number" min="0" value="1" />
-      </label>
-      <label>Smart animate ms
-        <input name="durationMs" type="number" min="1" value="80" />
       </label>
     </div>
 
@@ -146,11 +149,11 @@ const ui = String.raw`
               fontSize: Number(form.get("fontSize")),
               lineHeightPx: parseOptionalNumber(form.get("lineHeightPx")),
               letterSpacingPx: Number(form.get("letterSpacingPx")),
-              wordsPerStep: Number(form.get("wordsPerStep")),
+              streamMode: String(form.get("streamMode") || "words"),
+              streamCount: Number(form.get("streamCount")),
+              speedMs: Number(form.get("speedMs")),
               textColor: String(form.get("textColor") || "").trim(),
               setName: String(form.get("setName") || "").trim(),
-              delayMs: Number(form.get("delayMs")),
-              durationMs: Number(form.get("durationMs")),
               easing: String(form.get("easing") || "LINEAR")
             }
           }
@@ -194,13 +197,11 @@ async function generateSmoothTextSet(settings) {
 
   await figma.loadFontAsync(fontName);
 
-  const revealTexts = buildRevealTexts(settings.text, settings.wordsPerStep);
+  const revealStates = buildRevealStates(settings.text, settings.streamMode, settings.streamCount);
   const heights = [];
-  const visibleCounts = [];
 
-  for (let i = 0; i < revealTexts.length; i += 1) {
-    visibleCounts.push(revealTexts[i].length);
-    heights.push(measureTextHeight(revealTexts[i], settings, fontName));
+  for (let i = 0; i < revealStates.length; i += 1) {
+    heights.push(measureTextHeight(revealStates[i].text, settings, fontName));
   }
 
   const interpolatedHeights = computeInterpolatedHeights(heights);
@@ -213,7 +214,7 @@ async function generateSmoothTextSet(settings) {
     y: round2(figma.viewport.center.y - settings.viewportHeight / 2)
   };
 
-  for (let i = 0; i < revealTexts.length; i += 1) {
+  for (let i = 0; i < revealStates.length; i += 1) {
     const wrapper = figma.createComponent();
     wrapper.name = "State=" + getStateValue(i);
     wrapper.clipsContent = true;
@@ -235,7 +236,7 @@ async function generateSmoothTextSet(settings) {
     const stateTextNode = finalTextNode.clone();
     stateTextNode.x = 0;
     stateTextNode.y = 0;
-    applyRevealState(stateTextNode, visibleCounts[i]);
+    applyRevealState(stateTextNode, revealStates[i].visibleCount);
 
     contentRoot.appendChild(stateTextNode);
     wrapper.appendChild(contentRoot);
@@ -250,9 +251,10 @@ async function generateSmoothTextSet(settings) {
 
   const orderedSmoothVariants = getOrderedVariants(smoothSet, "State");
   for (let i = 0; i < orderedSmoothVariants.length - 1; i += 1) {
+    const transitionDurationMs = getTransitionDurationMs(revealStates[i + 1].unitCount, settings.speedMs);
     await orderedSmoothVariants[i].setReactionsAsync([
       {
-        trigger: { type: "AFTER_TIMEOUT", timeout: msToSeconds(settings.delayMs) },
+        trigger: { type: "AFTER_TIMEOUT", timeout: msToSeconds(1) },
         actions: [
           {
             type: "NODE",
@@ -261,7 +263,7 @@ async function generateSmoothTextSet(settings) {
             transition: {
               type: "SMART_ANIMATE",
               easing: { type: settings.easing },
-              duration: msToSeconds(settings.durationMs)
+              duration: msToSeconds(transitionDurationMs)
             }
           }
         ]
@@ -298,32 +300,59 @@ function validateSettings(settings) {
     throw new Error("Font size must be greater than 0.");
   }
 
-  if (!(settings.wordsPerStep > 0)) {
-    throw new Error("Words per step must be greater than 0.");
+  if (settings.streamMode !== "words" && settings.streamMode !== "letters") {
+    throw new Error('Stream must be either "words" or "letters".');
+  }
+
+  if (!(settings.streamCount > 0)) {
+    throw new Error("Every must be greater than 0.");
+  }
+
+  if (!(settings.speedMs > 0)) {
+    throw new Error("Speed must be greater than 0.");
   }
 }
 
-function buildRevealTexts(text, wordsPerStep) {
-  const tokens = tokenizeWords(text);
-  const revealTexts = [];
+function buildRevealStates(text, streamMode, streamCount) {
+  const units = streamMode === "letters" ? tokenizeLetters(text) : tokenizeWords(text);
+  const revealStates = [];
   let current = "";
 
-  for (let i = 0; i < tokens.length; i += wordsPerStep) {
-    const slice = tokens.slice(i, i + wordsPerStep).join("");
-    current += slice;
-    revealTexts.push(current);
+  for (let i = 0; i < units.length; i += streamCount) {
+    const slice = units.slice(i, i + streamCount);
+    const appendedText = slice.join("");
+    current += appendedText;
+    revealStates.push({
+      text: current,
+      visibleCount: current.length,
+      unitCount: slice.length
+    });
   }
 
-  if (revealTexts.length === 0 || revealTexts[revealTexts.length - 1] !== text) {
-    revealTexts.push(text);
+  if (revealStates.length === 0) {
+    revealStates.push({
+      text: text,
+      visibleCount: text.length,
+      unitCount: 1
+    });
+  } else if (revealStates[revealStates.length - 1].text !== text) {
+    revealStates.push({
+      text: text,
+      visibleCount: text.length,
+      unitCount: units.length % streamCount || streamCount
+    });
   }
 
-  return revealTexts;
+  return revealStates;
 }
 
 function tokenizeWords(text) {
   const tokens = text.match(/\S+\s*/g);
   return tokens || [text];
+}
+
+function tokenizeLetters(text) {
+  return Array.from(text);
 }
 
 function createStyledTextNode(text, settings, fontName) {
@@ -551,4 +580,8 @@ function round2(value) {
 
 function msToSeconds(value) {
   return Number(value) / 1000;
+}
+
+function getTransitionDurationMs(unitCount, speedMs) {
+  return Math.max(1, Number(unitCount) * Number(speedMs));
 }
