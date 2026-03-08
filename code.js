@@ -171,6 +171,8 @@ const ui = String.raw`
 </html>
 `;
 
+const BLUR_IN_RADIUS = 6;
+
 figma.showUI(ui, { width: 380, height: 760, title: "Smooth Stream Scroll" });
 
 figma.ui.onmessage = async function (msg) {
@@ -197,7 +199,9 @@ async function generateSmoothTextSet(settings) {
 
   await figma.loadFontAsync(fontName);
 
-  const revealStates = buildRevealStates(settings.text, settings.streamMode, settings.streamCount);
+  const revealPlan = buildRevealPlan(settings.text, settings.streamMode, settings.streamCount);
+  const revealStates = revealPlan.states;
+  const chunks = revealPlan.chunks;
   const heights = [];
 
   for (let i = 0; i < revealStates.length; i += 1) {
@@ -232,12 +236,27 @@ async function generateSmoothTextSet(settings) {
     contentRoot.x = 0;
     contentRoot.y = round2(settings.viewportHeight - heights[i]);
 
-    const stateTextNode = finalTextNode.clone();
-    stateTextNode.x = 0;
-    stateTextNode.y = 0;
-    applyRevealState(stateTextNode, revealStates[i].visibleCount);
+    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
+      const chunkNode = finalTextNode.clone();
+      chunkNode.name = "Chunk " + String(chunkIndex + 1);
+      chunkNode.x = 0;
+      chunkNode.y = 0;
+      applyChunkVisibility(chunkNode, chunks[chunkIndex].start, chunks[chunkIndex].end);
 
-    contentRoot.appendChild(stateTextNode);
+      if (chunkIndex <= i) {
+        chunkNode.opacity = 1;
+        chunkNode.effects = [];
+      } else if (chunkIndex === i + 1) {
+        chunkNode.opacity = 0;
+        chunkNode.effects = makeLayerBlurEffect(BLUR_IN_RADIUS);
+      } else {
+        chunkNode.opacity = 0;
+        chunkNode.effects = [];
+      }
+
+      contentRoot.appendChild(chunkNode);
+    }
+
     wrapper.appendChild(contentRoot);
     parent.appendChild(wrapper);
     wrappers.push(wrapper);
@@ -270,7 +289,7 @@ async function generateSmoothTextSet(settings) {
     ]);
   }
 
-  const starterIndex = orderedSmoothVariants.length > 1 ? 1 : 0;
+  const starterIndex = 0;
   const starterInstance = orderedSmoothVariants[starterIndex].createInstance();
   starterInstance.name = smoothSet.name + " / Preview";
   starterInstance.x = startPoint.x + smoothSet.width + 120;
@@ -312,37 +331,47 @@ function validateSettings(settings) {
   }
 }
 
-function buildRevealStates(text, streamMode, streamCount) {
+function buildRevealPlan(text, streamMode, streamCount) {
   const units = streamMode === "letters" ? tokenizeLetters(text) : tokenizeWords(text);
+  const chunks = [];
   const revealStates = [];
   let current = "";
 
   for (let i = 0; i < units.length; i += streamCount) {
     const slice = units.slice(i, i + streamCount);
     const appendedText = slice.join("");
+    const start = current.length;
     current += appendedText;
+    const end = current.length;
+
+    chunks.push({
+      start: start,
+      end: end,
+      unitCount: slice.length
+    });
+
     revealStates.push({
       text: current,
-      visibleCount: current.length,
       unitCount: slice.length
     });
   }
 
   if (revealStates.length === 0) {
-    revealStates.push({
-      text: text,
-      visibleCount: text.length,
+    chunks.push({
+      start: 0,
+      end: text.length,
       unitCount: 1
     });
-  } else if (revealStates[revealStates.length - 1].text !== text) {
     revealStates.push({
       text: text,
-      visibleCount: text.length,
-      unitCount: units.length % streamCount || streamCount
+      unitCount: 1
     });
   }
 
-  return revealStates;
+  return {
+    states: revealStates,
+    chunks: chunks
+  };
 }
 
 function tokenizeWords(text) {
@@ -388,14 +417,14 @@ function measureTextHeight(text, settings, fontName) {
   return height;
 }
 
-function applyRevealState(textNode, visibleCount) {
+function applyChunkVisibility(textNode, start, end) {
   const total = textNode.characters.length;
-  if (visibleCount >= total) {
-    return;
+  const visibleFills = getUsableFills(textNode);
+  const hiddenFills = makeTransparentFills(clonePaints(visibleFills));
+  textNode.setRangeFills(0, total, hiddenFills);
+  if (end > start) {
+    textNode.setRangeFills(start, end, visibleFills);
   }
-
-  const hiddenFills = makeTransparentFills(getUsableFills(textNode));
-  textNode.setRangeFills(visibleCount, total, hiddenFills);
 }
 
 function getUsableFills(textNode) {
@@ -545,6 +574,16 @@ function copyObject(source) {
     }
   }
   return target;
+}
+
+function makeLayerBlurEffect(radius) {
+  return [
+    {
+      type: "LAYER_BLUR",
+      radius: radius,
+      visible: true
+    }
+  ];
 }
 
 function round2(value) {
