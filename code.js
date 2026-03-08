@@ -67,7 +67,7 @@ const ui = String.raw`
       <label>Text width
         <input name="textWidth" type="number" min="1" value="180" />
       </label>
-      <label>Viewport height
+      <label>Max viewport height
         <input name="viewportHeight" type="number" min="1" value="120" />
       </label>
     </div>
@@ -129,7 +129,7 @@ const ui = String.raw`
     </label>
 
     <button type="submit">Generate component set</button>
-    <p>The plugin builds a new text component set and places a starter instance on the current page.</p>
+    <p>The plugin builds a new text component set, hugs the text until it reaches the max height, and places a starter instance on the current page.</p>
   </form>
 
   <script>
@@ -203,9 +203,12 @@ async function generateSmoothTextSet(settings) {
   const revealStates = revealPlan.states;
   const chunks = revealPlan.chunks;
   const heights = [];
+  const containerHeights = [];
 
   for (let i = 0; i < revealStates.length; i += 1) {
-    heights.push(measureTextHeight(revealStates[i].text, settings, fontName));
+    const textHeight = measureTextHeight(revealStates[i].text, settings, fontName);
+    heights.push(textHeight);
+    containerHeights.push(Math.min(textHeight, settings.viewportHeight));
   }
 
   const finalTextNode = createStyledTextNode(settings.text, settings, fontName);
@@ -215,18 +218,35 @@ async function generateSmoothTextSet(settings) {
   const wrappers = [];
   const startPoint = {
     x: round2(figma.viewport.center.x - settings.textWidth / 2),
-    y: round2(figma.viewport.center.y - settings.viewportHeight / 2)
+    y: round2(figma.viewport.center.y - containerHeights[0] / 2)
   };
 
   for (let i = 0; i < revealStates.length; i += 1) {
     const wrapper = figma.createComponent();
     wrapper.name = "State=" + getStateValue(i);
-    wrapper.clipsContent = true;
+    wrapper.layoutMode = "VERTICAL";
+    wrapper.primaryAxisSizingMode = "AUTO";
+    wrapper.counterAxisSizingMode = "FIXED";
+    wrapper.primaryAxisAlignItems = "MIN";
+    wrapper.counterAxisAlignItems = "MIN";
+    wrapper.itemSpacing = 0;
+    wrapper.paddingTop = 0;
+    wrapper.paddingRight = 0;
+    wrapper.paddingBottom = 0;
+    wrapper.paddingLeft = 0;
+    wrapper.clipsContent = false;
     wrapper.fills = [];
     wrapper.strokes = [];
-    wrapper.resizeWithoutConstraints(settings.textWidth, settings.viewportHeight);
+    wrapper.resizeWithoutConstraints(settings.textWidth, containerHeights[i]);
     wrapper.x = startPoint.x;
     wrapper.y = startPoint.y + i * (settings.viewportHeight + 24);
+
+    const viewport = figma.createFrame();
+    viewport.name = "Viewport";
+    viewport.clipsContent = true;
+    viewport.fills = [];
+    viewport.strokes = [];
+    viewport.resizeWithoutConstraints(settings.textWidth, containerHeights[i]);
 
     const contentRoot = figma.createFrame();
     contentRoot.name = "Streaming content";
@@ -235,7 +255,7 @@ async function generateSmoothTextSet(settings) {
     contentRoot.strokes = [];
     contentRoot.resizeWithoutConstraints(settings.textWidth, finalTextNode.height);
     contentRoot.x = 0;
-    contentRoot.y = round2(settings.viewportHeight - heights[i]);
+    contentRoot.y = round2(containerHeights[i] - heights[i]);
 
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
       const chunkNode = finalTextNode.clone();
@@ -258,7 +278,8 @@ async function generateSmoothTextSet(settings) {
       contentRoot.appendChild(chunkNode);
     }
 
-    wrapper.appendChild(contentRoot);
+    viewport.appendChild(contentRoot);
+    wrapper.appendChild(viewport);
     parent.appendChild(wrapper);
     wrappers.push(wrapper);
   }
