@@ -1,3 +1,23 @@
+const STORAGE_KEY = "smooth-stream-scroll:last-settings";
+
+const DEFAULT_SETTINGS = {
+  text:
+    "I am currently extracting the key financial statement data for Nvidia from the 10-K document to build a reliable and accurate 3-statement model.",
+  textWidth: 180,
+  viewportHeight: 120,
+  fontFamily: "Geist",
+  fontStyle: "Regular",
+  fontSize: 10,
+  lineHeightPx: null,
+  letterSpacingPx: 0.2,
+  streamMode: "words",
+  streamCount: 2,
+  speedMs: 80,
+  textColor: "#5E5E5E",
+  setName: "",
+  easing: "LINEAR"
+};
+
 const ui = String.raw`
 <!doctype html>
 <html>
@@ -60,30 +80,30 @@ const ui = String.raw`
 <body>
   <form id="form">
     <label>Text
-      <textarea name="text">I am currently extracting the key financial statement data for Nvidia from the 10-K document to build a reliable and accurate 3-statement model.</textarea>
+      <textarea name="text"></textarea>
     </label>
 
     <div class="grid">
       <label>Text width
-        <input name="textWidth" type="number" min="1" value="180" />
+        <input name="textWidth" type="number" min="1" />
       </label>
       <label>Max viewport height
-        <input name="viewportHeight" type="number" min="1" value="120" />
+        <input name="viewportHeight" type="number" min="1" />
       </label>
     </div>
 
     <div class="grid">
       <label>Font family
-        <input name="fontFamily" type="text" value="Geist" />
+        <input name="fontFamily" type="text" />
       </label>
       <label>Font style
-        <input name="fontStyle" type="text" value="Regular" />
+        <input name="fontStyle" type="text" />
       </label>
     </div>
 
     <div class="grid">
       <label>Font size
-        <input name="fontSize" type="number" min="1" step="0.1" value="10" />
+        <input name="fontSize" type="number" min="1" step="0.1" />
       </label>
       <label>Line height px
         <input name="lineHeightPx" type="number" min="0" step="0.1" placeholder="Auto" />
@@ -92,7 +112,7 @@ const ui = String.raw`
 
     <div class="grid">
       <label>Letter spacing px
-        <input name="letterSpacingPx" type="number" step="0.1" value="0.2" />
+        <input name="letterSpacingPx" type="number" step="0.1" />
       </label>
       <label>Stream
         <select name="streamMode">
@@ -104,19 +124,19 @@ const ui = String.raw`
 
     <div class="grid">
       <label>Every
-        <input name="streamCount" type="number" min="1" value="2" />
+        <input name="streamCount" type="number" min="1" />
       </label>
       <label>Speed ms per unit
-        <input name="speedMs" type="number" min="1" value="80" />
+        <input name="speedMs" type="number" min="1" />
       </label>
     </div>
 
     <div class="grid">
       <label>Text color
-        <input name="textColor" type="text" value="#5E5E5E" />
+        <input name="textColor" type="text" />
       </label>
       <label>Name prefix
-        <input name="setName" type="text" value="" placeholder="Optional" />
+        <input name="setName" type="text" placeholder="Optional" />
       </label>
     </div>
 
@@ -133,6 +153,15 @@ const ui = String.raw`
   </form>
 
   <script>
+    window.onmessage = function (event) {
+      const pluginMessage = event.data && event.data.pluginMessage;
+      if (!pluginMessage || pluginMessage.type !== "hydrate-settings") {
+        return;
+      }
+
+      hydrateForm(pluginMessage.settings || {});
+    };
+
     document.getElementById("form").addEventListener("submit", function (event) {
       event.preventDefault();
       const form = new FormData(event.currentTarget);
@@ -166,6 +195,33 @@ const ui = String.raw`
       const trimmed = String(value || "").trim();
       return trimmed ? Number(trimmed) : null;
     }
+
+    function hydrateForm(settings) {
+      const form = document.getElementById("form");
+      setValue(form, "text", settings.text);
+      setValue(form, "textWidth", settings.textWidth);
+      setValue(form, "viewportHeight", settings.viewportHeight);
+      setValue(form, "fontFamily", settings.fontFamily);
+      setValue(form, "fontStyle", settings.fontStyle);
+      setValue(form, "fontSize", settings.fontSize);
+      setValue(form, "lineHeightPx", settings.lineHeightPx === null ? "" : settings.lineHeightPx);
+      setValue(form, "letterSpacingPx", settings.letterSpacingPx);
+      setValue(form, "streamMode", settings.streamMode);
+      setValue(form, "streamCount", settings.streamCount);
+      setValue(form, "speedMs", settings.speedMs);
+      setValue(form, "textColor", settings.textColor);
+      setValue(form, "setName", settings.setName);
+      setValue(form, "easing", settings.easing);
+    }
+
+    function setValue(form, name, value) {
+      const field = form.elements.namedItem(name);
+      if (!field) {
+        return;
+      }
+
+      field.value = value == null ? "" : String(value);
+    }
   </script>
 </body>
 </html>
@@ -173,21 +229,33 @@ const ui = String.raw`
 
 const BLUR_IN_RADIUS = 6;
 
-figma.showUI(ui, { width: 380, height: 760, title: "Smooth Stream Scroll" });
+initPlugin();
 
-figma.ui.onmessage = async function (msg) {
-  if (!msg || msg.type !== "generate") {
-    return;
-  }
+async function initPlugin() {
+  figma.showUI(ui, { width: 380, height: 760, title: "Smooth Stream Scroll" });
 
-  try {
-    await generateSmoothTextSet(msg.settings);
-  } catch (error) {
-    figma.notify(error instanceof Error ? error.message : String(error), {
-      error: true
-    });
-  }
-};
+  const savedSettings = await loadSavedSettings();
+  figma.ui.postMessage({
+    type: "hydrate-settings",
+    settings: savedSettings
+  });
+
+  figma.ui.onmessage = async function (msg) {
+    if (!msg || msg.type !== "generate") {
+      return;
+    }
+
+    try {
+      const settings = mergeSettings(msg.settings || {});
+      await saveSettings(settings);
+      await generateSmoothTextSet(settings);
+    } catch (error) {
+      figma.notify(error instanceof Error ? error.message : String(error), {
+        error: true
+      });
+    }
+  };
+}
 
 async function generateSmoothTextSet(settings) {
   validateSettings(settings);
@@ -351,6 +419,31 @@ function validateSettings(settings) {
   if (!(settings.speedMs > 0)) {
     throw new Error("Speed must be greater than 0.");
   }
+}
+
+async function loadSavedSettings() {
+  const saved = await figma.clientStorage.getAsync(STORAGE_KEY);
+  return mergeSettings(saved || {});
+}
+
+async function saveSettings(settings) {
+  await figma.clientStorage.setAsync(STORAGE_KEY, settings);
+}
+
+function mergeSettings(settings) {
+  const merged = {};
+
+  for (const key in DEFAULT_SETTINGS) {
+    merged[key] = DEFAULT_SETTINGS[key];
+  }
+
+  for (const key in settings) {
+    if (Object.prototype.hasOwnProperty.call(settings, key) && settings[key] !== undefined) {
+      merged[key] = settings[key];
+    }
+  }
+
+  return merged;
 }
 
 function buildRevealPlan(text, streamMode, streamCount) {
