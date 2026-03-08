@@ -1,10 +1,19 @@
 const STORAGE_KEY = "smooth-stream-scroll:last-settings";
 
 const DEFAULT_SETTINGS = {
+  text:
+    "I am currently extracting the key financial statement data for Nvidia from the 10-K document to build a reliable and accurate 3-statement model.",
+  textWidth: 180,
   viewportHeight: 120,
+  fontFamily: "Geist",
+  fontStyle: "Regular",
+  fontSize: 10,
+  lineHeightPx: null,
+  letterSpacingPx: 0.2,
   streamMode: "words",
   streamCount: 2,
   speedMs: 80,
+  textColor: "#5E5E5E",
   setName: "",
   easing: "LINEAR"
 };
@@ -31,6 +40,7 @@ const ui = String.raw`
       gap: 6px;
     }
 
+    textarea,
     input,
     select,
     button {
@@ -47,6 +57,11 @@ const ui = String.raw`
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 12px;
+    }
+
+    textarea {
+      min-height: 120px;
+      resize: vertical;
     }
 
     .source-card {
@@ -132,11 +147,42 @@ const ui = String.raw`
       <div id="sourceInfo" class="source-card" data-state="missing">Select a text layer or a frame containing a text layer.</div>
     </label>
 
-    <button id="refreshSource" type="button">Use current selection</button>
+    <button id="refreshSource" type="button">Populate from selection</button>
+
+    <label>Text
+      <textarea name="text"></textarea>
+    </label>
 
     <div class="grid">
+      <label>Text width
+        <input name="textWidth" type="number" min="1" />
+      </label>
       <label>Max viewport height
         <input name="viewportHeight" type="number" min="1" />
+      </label>
+    </div>
+
+    <div class="grid">
+      <label>Font family
+        <input name="fontFamily" type="text" />
+      </label>
+      <label>Font style
+        <input name="fontStyle" type="text" />
+      </label>
+    </div>
+
+    <div class="grid">
+      <label>Font size
+        <input name="fontSize" type="number" min="1" step="0.1" />
+      </label>
+      <label>Line height px
+        <input name="lineHeightPx" type="number" min="0" step="0.1" placeholder="Auto" />
+      </label>
+    </div>
+
+    <div class="grid">
+      <label>Letter spacing px
+        <input name="letterSpacingPx" type="number" step="0.1" />
       </label>
       <label>Stream
         <select name="streamMode">
@@ -156,6 +202,9 @@ const ui = String.raw`
     </div>
 
     <div class="grid">
+      <label>Text color
+        <input name="textColor" type="text" />
+      </label>
       <label>Name prefix
         <input name="setName" type="text" placeholder="Optional" />
       </label>
@@ -205,16 +254,25 @@ const ui = String.raw`
         return;
       }
 
+      if (pluginMessage.type === "populate-settings") {
+        if (pluginMessage.settings) {
+          applyImportedSettings(pluginMessage.settings);
+          setLoading(false, "");
+        }
+        return;
+      }
+
       if (pluginMessage.type === "generate-error") {
         setLoading(false, pluginMessage.message || "Generation failed.");
       }
     };
 
     document.getElementById("refreshSource").addEventListener("click", function () {
+      setLoading(true, "Reading current selection...");
       parent.postMessage(
         {
           pluginMessage: {
-            type: "refresh-source"
+            type: "populate-source"
           }
         },
         "*"
@@ -223,10 +281,6 @@ const ui = String.raw`
 
     document.getElementById("form").addEventListener("submit", function (event) {
       event.preventDefault();
-      if (!hasValidSource) {
-        setLoading(false, "Select a text layer or a frame with text first.");
-        return;
-      }
       const form = new FormData(event.currentTarget);
       setLoading(true, "Generating component set...");
       parent.postMessage(
@@ -234,10 +288,18 @@ const ui = String.raw`
           pluginMessage: {
             type: "generate",
             settings: {
+              text: String(form.get("text") || ""),
+              textWidth: Number(form.get("textWidth")),
               viewportHeight: Number(form.get("viewportHeight")),
+              fontFamily: String(form.get("fontFamily") || "").trim(),
+              fontStyle: String(form.get("fontStyle") || "").trim(),
+              fontSize: Number(form.get("fontSize")),
+              lineHeightPx: parseOptionalNumber(form.get("lineHeightPx")),
+              letterSpacingPx: Number(form.get("letterSpacingPx")),
               streamMode: String(form.get("streamMode") || "words"),
               streamCount: Number(form.get("streamCount")),
               speedMs: Number(form.get("speedMs")),
+              textColor: String(form.get("textColor") || "").trim(),
               setName: String(form.get("setName") || "").trim(),
               easing: String(form.get("easing") || "LINEAR")
             }
@@ -247,14 +309,39 @@ const ui = String.raw`
       );
     });
 
+    function parseOptionalNumber(value) {
+      const trimmed = String(value || "").trim();
+      return trimmed ? Number(trimmed) : null;
+    }
+
     function hydrateForm(settings) {
       const form = document.getElementById("form");
+      setValue(form, "text", settings.text);
+      setValue(form, "textWidth", settings.textWidth);
       setValue(form, "viewportHeight", settings.viewportHeight);
+      setValue(form, "fontFamily", settings.fontFamily);
+      setValue(form, "fontStyle", settings.fontStyle);
+      setValue(form, "fontSize", settings.fontSize);
+      setValue(form, "lineHeightPx", settings.lineHeightPx === null ? "" : settings.lineHeightPx);
+      setValue(form, "letterSpacingPx", settings.letterSpacingPx);
       setValue(form, "streamMode", settings.streamMode);
       setValue(form, "streamCount", settings.streamCount);
       setValue(form, "speedMs", settings.speedMs);
+      setValue(form, "textColor", settings.textColor);
       setValue(form, "setName", settings.setName);
       setValue(form, "easing", settings.easing);
+    }
+
+    function applyImportedSettings(settings) {
+      const form = document.getElementById("form");
+      setValue(form, "text", settings.text);
+      setValue(form, "textWidth", settings.textWidth);
+      setValue(form, "fontFamily", settings.fontFamily);
+      setValue(form, "fontStyle", settings.fontStyle);
+      setValue(form, "fontSize", settings.fontSize);
+      setValue(form, "lineHeightPx", settings.lineHeightPx === null ? "" : settings.lineHeightPx);
+      setValue(form, "letterSpacingPx", settings.letterSpacingPx);
+      setValue(form, "textColor", settings.textColor);
     }
 
     function setValue(form, name, value) {
@@ -270,7 +357,7 @@ const ui = String.raw`
       const form = document.getElementById("form");
       const refreshSource = document.getElementById("refreshSource");
       const status = document.getElementById("status");
-      const fields = form.querySelectorAll("input, select, button");
+      const fields = form.querySelectorAll("input, textarea, select, button");
 
       for (let i = 0; i < fields.length; i += 1) {
         fields[i].disabled = isLoading;
@@ -341,7 +428,7 @@ const ui = String.raw`
 
       const isBusy = submitButton.disabled && status.dataset.state === "loading";
       if (!isBusy) {
-        submitButton.disabled = !hasValidSource;
+        submitButton.disabled = false;
       }
     }
   </script>
@@ -379,6 +466,23 @@ async function initPlugin() {
       return;
     }
 
+    if (msg.type === "populate-source") {
+      try {
+        const importedSettings = await getPopulateSettingsFromSelection();
+        figma.ui.postMessage({
+          type: "populate-settings",
+          settings: importedSettings
+        });
+        postSelectionSourceToUi();
+      } catch (error) {
+        figma.ui.postMessage({
+          type: "generate-error",
+          message: error instanceof Error ? error.message : String(error)
+        });
+      }
+      return;
+    }
+
     if (msg.type !== "generate") {
       return;
     }
@@ -401,7 +505,7 @@ async function initPlugin() {
 
 async function generateSmoothTextSet(settings) {
   validateSettings(settings);
-  const source = await getSelectedTextSource();
+  const source = buildGenerationSource(settings);
 
   const revealPlan = buildRevealPlan(source.text, settings.streamMode, settings.streamCount);
   const revealStates = revealPlan.states;
@@ -525,8 +629,24 @@ async function generateSmoothTextSet(settings) {
 }
 
 function validateSettings(settings) {
+  if (!settings.text || !String(settings.text).trim()) {
+    throw new Error("Enter some text.");
+  }
+
+  if (!(settings.textWidth > 0)) {
+    throw new Error("Text width must be greater than 0.");
+  }
+
   if (!(settings.viewportHeight > 0)) {
     throw new Error("Max viewport height must be greater than 0.");
+  }
+
+  if (!settings.fontFamily || !settings.fontStyle) {
+    throw new Error("Enter a font family and style.");
+  }
+
+  if (!(settings.fontSize > 0)) {
+    throw new Error("Font size must be greater than 0.");
   }
 
   if (settings.streamMode !== "words" && settings.streamMode !== "letters") {
@@ -539,6 +659,10 @@ function validateSettings(settings) {
 
   if (!(settings.speedMs > 0)) {
     throw new Error("Speed must be greater than 0.");
+  }
+
+  if (!settings.textColor) {
+    throw new Error("Enter a text color.");
   }
 }
 
@@ -625,6 +749,30 @@ function tokenizeWords(text) {
 
 function tokenizeLetters(text) {
   return Array.from(text);
+}
+
+function buildGenerationSource(settings) {
+  return {
+    text: settings.text,
+    textWidth: settings.textWidth,
+    fontName: {
+      family: settings.fontFamily,
+      style: settings.fontStyle
+    },
+    fontSize: settings.fontSize,
+    lineHeight:
+      settings.lineHeightPx === null
+        ? { unit: "AUTO" }
+        : {
+            unit: "PIXELS",
+            value: settings.lineHeightPx
+          },
+    letterSpacing: {
+      unit: "PIXELS",
+      value: settings.letterSpacingPx
+    },
+    fills: [makeSolidPaint(settings.textColor)]
+  };
 }
 
 function createStyledTextNode(source, text) {
@@ -786,6 +934,19 @@ function copyObject(source) {
   return target;
 }
 
+function makeSolidPaint(hex) {
+  const rgb = hexToRgb(hex);
+  return {
+    type: "SOLID",
+    color: {
+      r: rgb.r / 255,
+      g: rgb.g / 255,
+      b: rgb.b / 255
+    },
+    opacity: 1
+  };
+}
+
 function postSelectionSourceToUi() {
   figma.ui.postMessage({
     type: "selection-source",
@@ -813,6 +974,21 @@ async function getSelectedTextSource() {
     letterSpacing: styleSnapshot.letterSpacing,
     fills: styleSnapshot.fills,
     textStyleId: textNode.textStyleId !== figma.mixed ? textNode.textStyleId || "" : ""
+  };
+}
+
+async function getPopulateSettingsFromSelection() {
+  const source = await getSelectedTextSource();
+
+  return {
+    text: source.text,
+    textWidth: source.textWidth,
+    fontFamily: source.fontName.family,
+    fontStyle: source.fontName.style,
+    fontSize: source.fontSize,
+    lineHeightPx: getLineHeightPx(source.lineHeight, source.fontSize),
+    letterSpacingPx: getLetterSpacingPx(source.letterSpacing, source.fontSize),
+    textColor: fillsToEditableColor(source.fills)
   };
 }
 
@@ -964,6 +1140,88 @@ function truncateText(text, maxLength) {
   }
 
   return normalized.slice(0, maxLength - 1) + "\u2026";
+}
+
+function getLineHeightPx(lineHeight, fontSize) {
+  if (!lineHeight || lineHeight.unit === "AUTO") {
+    return null;
+  }
+
+  if (lineHeight.unit === "PIXELS") {
+    return lineHeight.value;
+  }
+
+  if (lineHeight.unit === "PERCENT") {
+    return round2((fontSize * lineHeight.value) / 100);
+  }
+
+  return null;
+}
+
+function getLetterSpacingPx(letterSpacing, fontSize) {
+  if (!letterSpacing) {
+    return 0;
+  }
+
+  if (letterSpacing.unit === "PIXELS") {
+    return letterSpacing.value;
+  }
+
+  if (letterSpacing.unit === "PERCENT") {
+    return round2((fontSize * letterSpacing.value) / 100);
+  }
+
+  return 0;
+}
+
+function fillsToEditableColor(fills) {
+  if (!fills || fills.length === 0) {
+    return DEFAULT_SETTINGS.textColor;
+  }
+
+  for (let i = 0; i < fills.length; i += 1) {
+    if (fills[i].type === "SOLID" && fills[i].color) {
+      return rgbToHex(fills[i].color);
+    }
+  }
+
+  return DEFAULT_SETTINGS.textColor;
+}
+
+function rgbToHex(color) {
+  const r = toHexChannel(color.r);
+  const g = toHexChannel(color.g);
+  const b = toHexChannel(color.b);
+  return "#" + r + g + b;
+}
+
+function toHexChannel(value) {
+  const channel = Math.max(0, Math.min(255, Math.round(Number(value) * 255)));
+  const hex = channel.toString(16).toUpperCase();
+  return hex.length === 1 ? "0" + hex : hex;
+}
+
+function hexToRgb(hex) {
+  const normalized = String(hex).trim().replace(/^#/, "");
+  const expanded =
+    normalized.length === 3
+      ? normalized.charAt(0) +
+        normalized.charAt(0) +
+        normalized.charAt(1) +
+        normalized.charAt(1) +
+        normalized.charAt(2) +
+        normalized.charAt(2)
+      : normalized;
+
+  if (!/^[0-9a-fA-F]{6}$/.test(expanded)) {
+    throw new Error("Text color must be a 3-digit or 6-digit hex value.");
+  }
+
+  return {
+    r: parseInt(expanded.slice(0, 2), 16),
+    g: parseInt(expanded.slice(2, 4), 16),
+    b: parseInt(expanded.slice(4, 6), 16)
+  };
 }
 
 function makeLayerBlurEffect(radius) {
