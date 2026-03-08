@@ -115,8 +115,8 @@ const ui = String.raw`
       <label>Text color
         <input name="textColor" type="text" value="#5E5E5E" />
       </label>
-      <label>Component set name
-        <input name="setName" type="text" value="Smooth streaming scroll" />
+      <label>Name prefix
+        <input name="setName" type="text" value="" placeholder="Optional" />
       </label>
     </div>
 
@@ -209,6 +209,7 @@ async function generateSmoothTextSet(settings) {
   }
 
   const finalTextNode = createStyledTextNode(settings.text, settings, fontName);
+  const generatedSetName = buildGeneratedSetName(settings, revealStates);
 
   const parent = figma.currentPage;
   const wrappers = [];
@@ -263,7 +264,7 @@ async function generateSmoothTextSet(settings) {
   }
 
   const smoothSet = figma.combineAsVariants(wrappers, parent);
-  smoothSet.name = settings.setName;
+  smoothSet.name = generatedSetName;
   smoothSet.x = startPoint.x;
   smoothSet.y = startPoint.y;
 
@@ -596,4 +597,35 @@ function msToSeconds(value) {
 
 function getTransitionDurationMs(unitCount, speedMs) {
   return Math.max(1, Number(unitCount) * Number(speedMs));
+}
+
+function buildGeneratedSetName(settings, revealStates) {
+  const totalMs = getTotalAnimationMs(revealStates, settings.speedMs);
+  const unitLabel = settings.streamMode === "letters" ? "Letters" : "Words";
+  const mainName =
+    "[" +
+    String(totalMs) +
+    "ms] - " +
+    String(settings.streamCount) +
+    unitLabel +
+    " - " +
+    String(settings.speedMs) +
+    "ms";
+
+  if (!settings.setName) {
+    return mainName;
+  }
+
+  return String(settings.setName).trim() + " - " + mainName;
+}
+
+function getTotalAnimationMs(revealStates, speedMs) {
+  let totalMs = 0;
+
+  for (let i = 1; i < revealStates.length; i += 1) {
+    totalMs += 1;
+    totalMs += getTransitionDurationMs(revealStates[i].unitCount, speedMs);
+  }
+
+  return totalMs;
 }
