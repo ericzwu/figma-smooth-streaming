@@ -1,0 +1,7 @@
+{
+  "name": "Smooth Stream Scroll",
+  "id": "smooth-stream-scroll",
+  "api": "1.0.0",
+  "editorType": ["figma"],
+  "main": "code.js"
+}
