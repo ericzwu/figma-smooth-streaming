@@ -1,19 +1,10 @@
 const STORAGE_KEY = "smooth-stream-scroll:last-settings";
 
 const DEFAULT_SETTINGS = {
-  text:
-    "I am currently extracting the key financial statement data for Nvidia from the 10-K document to build a reliable and accurate 3-statement model.",
-  textWidth: 180,
   viewportHeight: 120,
-  fontFamily: "Geist",
-  fontStyle: "Regular",
-  fontSize: 10,
-  lineHeightPx: null,
-  letterSpacingPx: 0.2,
   streamMode: "words",
   streamCount: 2,
   speedMs: 80,
-  textColor: "#5E5E5E",
   setName: "",
   easing: "LINEAR"
 };
@@ -40,7 +31,6 @@ const ui = String.raw`
       gap: 6px;
     }
 
-    textarea,
     input,
     select,
     button {
@@ -53,15 +43,34 @@ const ui = String.raw`
       width: 100%;
     }
 
-    textarea {
-      min-height: 120px;
-      resize: vertical;
-    }
-
     .grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 12px;
+    }
+
+    .source-card {
+      padding: 12px;
+      border: 1px solid #d0d0d0;
+      border-radius: 10px;
+      background: #fafafa;
+      display: grid;
+      gap: 6px;
+    }
+
+    .source-card[data-state="missing"] {
+      border-color: #f0c2c2;
+      background: #fff6f6;
+    }
+
+    .source-row {
+      color: #444;
+      word-break: break-word;
+    }
+
+    .source-label {
+      color: #666;
+      margin-right: 6px;
     }
 
     button {
@@ -69,6 +78,46 @@ const ui = String.raw`
       color: #fff;
       border: 0;
       cursor: pointer;
+    }
+
+    button[disabled] {
+      cursor: wait;
+      opacity: 0.7;
+    }
+
+    .status {
+      min-height: 18px;
+      color: #666;
+    }
+
+    .status[data-state="loading"] {
+      color: #222;
+    }
+
+    .status[data-state="error"] {
+      color: #b42318;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      margin-right: 8px;
+      border: 2px solid rgba(0, 0, 0, 0.18);
+      border-top-color: #111;
+      border-radius: 999px;
+      animation: spin 700ms linear infinite;
+      vertical-align: -2px;
+    }
+
+    @keyframes spin {
+      from {
+        transform: rotate(0deg);
+      }
+
+      to {
+        transform: rotate(360deg);
+      }
     }
 
     p {
@@ -79,40 +128,15 @@ const ui = String.raw`
 </head>
 <body>
   <form id="form">
-    <label>Text
-      <textarea name="text"></textarea>
+    <label>Selected source
+      <div id="sourceInfo" class="source-card" data-state="missing">Select a text layer or a frame containing a text layer.</div>
     </label>
 
+    <button id="refreshSource" type="button">Use current selection</button>
+
     <div class="grid">
-      <label>Text width
-        <input name="textWidth" type="number" min="1" />
-      </label>
       <label>Max viewport height
         <input name="viewportHeight" type="number" min="1" />
-      </label>
-    </div>
-
-    <div class="grid">
-      <label>Font family
-        <input name="fontFamily" type="text" />
-      </label>
-      <label>Font style
-        <input name="fontStyle" type="text" />
-      </label>
-    </div>
-
-    <div class="grid">
-      <label>Font size
-        <input name="fontSize" type="number" min="1" step="0.1" />
-      </label>
-      <label>Line height px
-        <input name="lineHeightPx" type="number" min="0" step="0.1" placeholder="Auto" />
-      </label>
-    </div>
-
-    <div class="grid">
-      <label>Letter spacing px
-        <input name="letterSpacingPx" type="number" step="0.1" />
       </label>
       <label>Stream
         <select name="streamMode">
@@ -132,9 +156,6 @@ const ui = String.raw`
     </div>
 
     <div class="grid">
-      <label>Text color
-        <input name="textColor" type="text" />
-      </label>
       <label>Name prefix
         <input name="setName" type="text" placeholder="Optional" />
       </label>
@@ -149,39 +170,74 @@ const ui = String.raw`
     </label>
 
     <button type="submit">Generate component set</button>
+    <div id="status" class="status" data-state="idle"></div>
     <p>The plugin builds a new text component set, hugs the text until it reaches the max height, and places a starter instance on the current page.</p>
   </form>
 
   <script>
+    var hasValidSource = false;
+
+    parent.postMessage(
+      {
+        pluginMessage: {
+          type: "ui-ready"
+        }
+      },
+      "*"
+    );
+
     window.onmessage = function (event) {
       const pluginMessage = event.data && event.data.pluginMessage;
-      if (!pluginMessage || pluginMessage.type !== "hydrate-settings") {
+      if (!pluginMessage) {
         return;
       }
 
-      hydrateForm(pluginMessage.settings || {});
+      if (pluginMessage.type === "hydrate-settings") {
+        hydrateForm(pluginMessage.settings || {});
+        setLoading(false, "");
+        return;
+      }
+
+      if (pluginMessage.type === "selection-source") {
+        hasValidSource = Boolean(pluginMessage.source && pluginMessage.source.isValid);
+        renderSource(pluginMessage.source || null);
+        updateGenerateEnabled();
+        return;
+      }
+
+      if (pluginMessage.type === "generate-error") {
+        setLoading(false, pluginMessage.message || "Generation failed.");
+      }
     };
+
+    document.getElementById("refreshSource").addEventListener("click", function () {
+      parent.postMessage(
+        {
+          pluginMessage: {
+            type: "refresh-source"
+          }
+        },
+        "*"
+      );
+    });
 
     document.getElementById("form").addEventListener("submit", function (event) {
       event.preventDefault();
+      if (!hasValidSource) {
+        setLoading(false, "Select a text layer or a frame with text first.");
+        return;
+      }
       const form = new FormData(event.currentTarget);
+      setLoading(true, "Generating component set...");
       parent.postMessage(
         {
           pluginMessage: {
             type: "generate",
             settings: {
-              text: String(form.get("text") || ""),
-              textWidth: Number(form.get("textWidth")),
               viewportHeight: Number(form.get("viewportHeight")),
-              fontFamily: String(form.get("fontFamily") || "").trim(),
-              fontStyle: String(form.get("fontStyle") || "").trim(),
-              fontSize: Number(form.get("fontSize")),
-              lineHeightPx: parseOptionalNumber(form.get("lineHeightPx")),
-              letterSpacingPx: Number(form.get("letterSpacingPx")),
               streamMode: String(form.get("streamMode") || "words"),
               streamCount: Number(form.get("streamCount")),
               speedMs: Number(form.get("speedMs")),
-              textColor: String(form.get("textColor") || "").trim(),
               setName: String(form.get("setName") || "").trim(),
               easing: String(form.get("easing") || "LINEAR")
             }
@@ -191,25 +247,12 @@ const ui = String.raw`
       );
     });
 
-    function parseOptionalNumber(value) {
-      const trimmed = String(value || "").trim();
-      return trimmed ? Number(trimmed) : null;
-    }
-
     function hydrateForm(settings) {
       const form = document.getElementById("form");
-      setValue(form, "text", settings.text);
-      setValue(form, "textWidth", settings.textWidth);
       setValue(form, "viewportHeight", settings.viewportHeight);
-      setValue(form, "fontFamily", settings.fontFamily);
-      setValue(form, "fontStyle", settings.fontStyle);
-      setValue(form, "fontSize", settings.fontSize);
-      setValue(form, "lineHeightPx", settings.lineHeightPx === null ? "" : settings.lineHeightPx);
-      setValue(form, "letterSpacingPx", settings.letterSpacingPx);
       setValue(form, "streamMode", settings.streamMode);
       setValue(form, "streamCount", settings.streamCount);
       setValue(form, "speedMs", settings.speedMs);
-      setValue(form, "textColor", settings.textColor);
       setValue(form, "setName", settings.setName);
       setValue(form, "easing", settings.easing);
     }
@@ -221,6 +264,85 @@ const ui = String.raw`
       }
 
       field.value = value == null ? "" : String(value);
+    }
+
+    function setLoading(isLoading, message) {
+      const form = document.getElementById("form");
+      const refreshSource = document.getElementById("refreshSource");
+      const status = document.getElementById("status");
+      const fields = form.querySelectorAll("input, select, button");
+
+      for (let i = 0; i < fields.length; i += 1) {
+        fields[i].disabled = isLoading;
+      }
+
+      refreshSource.disabled = isLoading;
+
+      if (isLoading) {
+        status.dataset.state = "loading";
+        status.innerHTML = '<span class="spinner"></span>' + escapeHtml(message || "Generating...");
+        return;
+      }
+
+      if (message) {
+        status.dataset.state = "error";
+        status.textContent = message;
+        return;
+      }
+
+      status.dataset.state = "idle";
+      status.textContent = "";
+      updateGenerateEnabled();
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    function renderSource(source) {
+      const sourceInfo = document.getElementById("sourceInfo");
+
+      if (!source || !source.isValid) {
+        sourceInfo.dataset.state = "missing";
+        sourceInfo.innerHTML = escapeHtml(
+          (source && source.message) || "Select a text layer or a frame containing a text layer."
+        );
+        return;
+      }
+
+      sourceInfo.dataset.state = "ready";
+      sourceInfo.innerHTML =
+        '<div class="source-row"><span class="source-label">Selection:</span>' +
+        escapeHtml(source.selectionName) +
+        "</div>" +
+        '<div class="source-row"><span class="source-label">Text layer:</span>' +
+        escapeHtml(source.textNodeName) +
+        "</div>" +
+        '<div class="source-row"><span class="source-label">Width:</span>' +
+        escapeHtml(String(source.textWidth)) +
+        "px</div>" +
+        '<div class="source-row"><span class="source-label">Style:</span>' +
+        escapeHtml(source.styleDescription) +
+        "</div>" +
+        '<div class="source-row"><span class="source-label">Preview:</span>' +
+        escapeHtml(source.previewText) +
+        "</div>";
+    }
+
+    function updateGenerateEnabled() {
+      const submitButton = document.querySelector('button[type="submit"]');
+      const status = document.getElementById("status");
+      if (!submitButton) {
+        return;
+      }
+
+      const isBusy = submitButton.disabled && status.dataset.state === "loading";
+      if (!isBusy) {
+        submitButton.disabled = !hasValidSource;
+      }
     }
   </script>
 </body>
@@ -235,13 +357,29 @@ async function initPlugin() {
   figma.showUI(ui, { width: 380, height: 760, title: "Smooth Stream Scroll" });
 
   const savedSettings = await loadSavedSettings();
-  figma.ui.postMessage({
-    type: "hydrate-settings",
-    settings: savedSettings
-  });
+  postSelectionSourceToUi();
+  figma.on("selectionchange", postSelectionSourceToUi);
 
   figma.ui.onmessage = async function (msg) {
-    if (!msg || msg.type !== "generate") {
+    if (!msg) {
+      return;
+    }
+
+    if (msg.type === "ui-ready") {
+      figma.ui.postMessage({
+        type: "hydrate-settings",
+        settings: savedSettings
+      });
+      postSelectionSourceToUi();
+      return;
+    }
+
+    if (msg.type === "refresh-source") {
+      postSelectionSourceToUi();
+      return;
+    }
+
+    if (msg.type !== "generate") {
       return;
     }
 
@@ -250,6 +388,10 @@ async function initPlugin() {
       await saveSettings(settings);
       await generateSmoothTextSet(settings);
     } catch (error) {
+      figma.ui.postMessage({
+        type: "generate-error",
+        message: error instanceof Error ? error.message : String(error)
+      });
       figma.notify(error instanceof Error ? error.message : String(error), {
         error: true
       });
@@ -259,33 +401,24 @@ async function initPlugin() {
 
 async function generateSmoothTextSet(settings) {
   validateSettings(settings);
+  const source = await getSelectedTextSource();
 
-  const fontName = {
-    family: settings.fontFamily,
-    style: settings.fontStyle
-  };
-
-  await figma.loadFontAsync(fontName);
-
-  const revealPlan = buildRevealPlan(settings.text, settings.streamMode, settings.streamCount);
+  const revealPlan = buildRevealPlan(source.text, settings.streamMode, settings.streamCount);
   const revealStates = revealPlan.states;
   const chunks = revealPlan.chunks;
-  const heights = [];
-  const containerHeights = [];
+  const heights = measureTextHeights(revealStates, source);
+  const containerHeights = heights.map(function (textHeight) {
+    return Math.min(textHeight, settings.viewportHeight);
+  });
 
-  for (let i = 0; i < revealStates.length; i += 1) {
-    const textHeight = measureTextHeight(revealStates[i].text, settings, fontName);
-    heights.push(textHeight);
-    containerHeights.push(Math.min(textHeight, settings.viewportHeight));
-  }
-
-  const finalTextNode = createStyledTextNode(settings.text, settings, fontName);
+  const finalTextNode = createStyledTextNode(source, source.text);
+  const sourceVisibleFills = clonePaints(source.fills);
   const generatedSetName = buildGeneratedSetName(settings, revealStates);
 
   const parent = figma.currentPage;
   const wrappers = [];
   const startPoint = {
-    x: round2(figma.viewport.center.x - settings.textWidth / 2),
+    x: round2(figma.viewport.center.x - source.textWidth / 2),
     y: round2(figma.viewport.center.y - containerHeights[0] / 2)
   };
 
@@ -305,7 +438,7 @@ async function generateSmoothTextSet(settings) {
     wrapper.clipsContent = false;
     wrapper.fills = [];
     wrapper.strokes = [];
-    wrapper.resizeWithoutConstraints(settings.textWidth, containerHeights[i]);
+    wrapper.resizeWithoutConstraints(source.textWidth, containerHeights[i]);
     wrapper.x = startPoint.x;
     wrapper.y = startPoint.y + i * (settings.viewportHeight + 24);
 
@@ -314,14 +447,14 @@ async function generateSmoothTextSet(settings) {
     viewport.clipsContent = true;
     viewport.fills = [];
     viewport.strokes = [];
-    viewport.resizeWithoutConstraints(settings.textWidth, containerHeights[i]);
+    viewport.resizeWithoutConstraints(source.textWidth, containerHeights[i]);
 
     const contentRoot = figma.createFrame();
     contentRoot.name = "Streaming content";
     contentRoot.clipsContent = false;
     contentRoot.fills = [];
     contentRoot.strokes = [];
-    contentRoot.resizeWithoutConstraints(settings.textWidth, finalTextNode.height);
+    contentRoot.resizeWithoutConstraints(source.textWidth, finalTextNode.height);
     contentRoot.x = 0;
     contentRoot.y = round2(containerHeights[i] - heights[i]);
 
@@ -330,7 +463,7 @@ async function generateSmoothTextSet(settings) {
       chunkNode.name = "Chunk " + String(chunkIndex + 1);
       chunkNode.x = 0;
       chunkNode.y = 0;
-      applyChunkVisibility(chunkNode, chunks[chunkIndex].start, chunks[chunkIndex].end);
+      applyChunkVisibility(chunkNode, chunks[chunkIndex].start, chunks[chunkIndex].end, sourceVisibleFills);
 
       if (chunkIndex < revealStates[i].revealedChunkCount) {
         chunkNode.opacity = 1;
@@ -379,7 +512,7 @@ async function generateSmoothTextSet(settings) {
     ]);
   }
 
-  const starterIndex = 0;
+  const starterIndex = orderedSmoothVariants.length > 1 ? 1 : 0;
   const starterInstance = orderedSmoothVariants[starterIndex].createInstance();
   starterInstance.name = smoothSet.name + " / Preview";
   starterInstance.x = startPoint.x + smoothSet.width + 120;
@@ -392,20 +525,8 @@ async function generateSmoothTextSet(settings) {
 }
 
 function validateSettings(settings) {
-  if (!settings.text || !String(settings.text).trim()) {
-    throw new Error("Enter some text.");
-  }
-
-  if (!settings.fontFamily || !settings.fontStyle) {
-    throw new Error("Enter a font family and style.");
-  }
-
-  if (!(settings.textWidth > 0) || !(settings.viewportHeight > 0)) {
-    throw new Error("Text width and viewport height must be greater than 0.");
-  }
-
-  if (!(settings.fontSize > 0)) {
-    throw new Error("Font size must be greater than 0.");
+  if (!(settings.viewportHeight > 0)) {
+    throw new Error("Max viewport height must be greater than 0.");
   }
 
   if (settings.streamMode !== "words" && settings.streamMode !== "letters") {
@@ -506,44 +627,46 @@ function tokenizeLetters(text) {
   return Array.from(text);
 }
 
-function createStyledTextNode(text, settings, fontName) {
+function createStyledTextNode(source, text) {
   const node = figma.createText();
-  node.fontName = fontName;
-  node.fontSize = settings.fontSize;
+  node.visible = true;
+  node.opacity = 1;
+  node.fontName = source.fontName;
+  node.fontSize = source.fontSize;
   node.characters = text;
   node.textAutoResize = "HEIGHT";
   node.textAlignHorizontal = "LEFT";
   node.textAlignVertical = "TOP";
-  node.fills = [makeSolidPaint(settings.textColor)];
-  node.letterSpacing = {
-    unit: "PIXELS",
-    value: settings.letterSpacingPx
-  };
-  node.lineHeight =
-    settings.lineHeightPx === null
-      ? { unit: "AUTO" }
-      : {
-          unit: "PIXELS",
-          value: settings.lineHeightPx
-        };
-  node.resize(settings.textWidth, Math.max(1, node.height));
+  node.letterSpacing = cloneObjectIfNeeded(source.letterSpacing);
+  node.lineHeight = cloneObjectIfNeeded(source.lineHeight);
+  node.fills = clonePaints(source.fills);
+  node.resize(source.textWidth, Math.max(1, node.height));
   return node;
 }
 
-function measureTextHeight(text, settings, fontName) {
-  if (!text) {
-    return 0;
+function measureTextHeights(revealStates, source) {
+  const measuringNode = createStyledTextNode(source, " ");
+  const heights = [];
+
+  for (let i = 0; i < revealStates.length; i += 1) {
+    const text = revealStates[i].text;
+    if (!text) {
+      heights.push(0);
+      continue;
+    }
+
+    measuringNode.characters = text;
+    measuringNode.resize(source.textWidth, Math.max(1, measuringNode.height));
+    heights.push(measuringNode.height);
   }
 
-  const tempNode = createStyledTextNode(text, settings, fontName);
-  const height = tempNode.height;
-  return height;
+  return heights;
 }
 
-function applyChunkVisibility(textNode, start, end) {
+function applyChunkVisibility(textNode, start, end, sourceVisibleFills) {
   const total = textNode.characters.length;
-  const visibleFills = getUsableFills(textNode);
-  const hiddenFills = makeTransparentFills(clonePaints(visibleFills));
+  const visibleFills = clonePaints(sourceVisibleFills);
+  const hiddenFills = makeTransparentFills(clonePaints(sourceVisibleFills));
   textNode.setRangeFills(0, total, hiddenFills);
   if (end > start) {
     textNode.setRangeFills(start, end, visibleFills);
@@ -616,42 +739,6 @@ function getStateValue(index) {
   return String(index + 1);
 }
 
-function makeSolidPaint(hex) {
-  const rgb = hexToRgb(hex);
-  return {
-    type: "SOLID",
-    color: {
-      r: rgb.r / 255,
-      g: rgb.g / 255,
-      b: rgb.b / 255
-    },
-    opacity: 1
-  };
-}
-
-function hexToRgb(hex) {
-  const normalized = String(hex).trim().replace(/^#/, "");
-  const expanded =
-    normalized.length === 3
-      ? normalized.charAt(0) +
-        normalized.charAt(0) +
-        normalized.charAt(1) +
-        normalized.charAt(1) +
-        normalized.charAt(2) +
-        normalized.charAt(2)
-      : normalized;
-
-  if (!/^[0-9a-fA-F]{6}$/.test(expanded)) {
-    throw new Error("Text color must be a 3-digit or 6-digit hex value.");
-  }
-
-  return {
-    r: parseInt(expanded.slice(0, 2), 16),
-    g: parseInt(expanded.slice(2, 4), 16),
-    b: parseInt(expanded.slice(4, 6), 16)
-  };
-}
-
 function clonePaints(paints) {
   return paints.map(function (paint) {
     const clone = copyObject(paint);
@@ -697,6 +784,186 @@ function copyObject(source) {
     }
   }
   return target;
+}
+
+function postSelectionSourceToUi() {
+  figma.ui.postMessage({
+    type: "selection-source",
+    source: getSelectionSourceSummary()
+  });
+}
+
+async function getSelectedTextSource() {
+  const selection = figma.currentPage.selection[0];
+  if (!selection) {
+    throw new Error("Select a text layer or a frame containing one text layer.");
+  }
+
+  const textNode = findPrimaryTextNode(selection);
+  await loadFontsForTextNode(textNode);
+  const styleSnapshot = getTextStyleSnapshot(textNode);
+
+  return {
+    selectionName: selection.name,
+    text: textNode.characters,
+    textWidth: round2(textNode.width),
+    fontName: styleSnapshot.fontName,
+    fontSize: styleSnapshot.fontSize,
+    lineHeight: styleSnapshot.lineHeight,
+    letterSpacing: styleSnapshot.letterSpacing,
+    fills: styleSnapshot.fills,
+    textStyleId: textNode.textStyleId !== figma.mixed ? textNode.textStyleId || "" : ""
+  };
+}
+
+function getSelectionSourceSummary() {
+  try {
+    const selection = figma.currentPage.selection[0];
+    if (!selection) {
+      return {
+        isValid: false,
+        message: "Select a text layer or a frame containing a text layer."
+      };
+    }
+
+    const textNode = findPrimaryTextNode(selection);
+    const styleDescription = getStyleDescription(textNode);
+    return {
+      isValid: true,
+      selectionName: selection.name,
+      textNodeName: textNode.name,
+      textWidth: round2(textNode.width),
+      styleDescription: styleDescription,
+      previewText: truncateText(textNode.characters, 120)
+    };
+  } catch (error) {
+    return {
+      isValid: false,
+      message: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+function findPrimaryTextNode(node) {
+  const textNodes = [];
+  collectTextNodes(node, textNodes);
+
+  if (textNodes.length === 0) {
+    throw new Error('The current selection does not contain a text layer.');
+  }
+
+  textNodes.sort(function (a, b) {
+    const charDiff = b.characters.length - a.characters.length;
+    if (charDiff !== 0) {
+      return charDiff;
+    }
+
+    return b.width * b.height - a.width * a.height;
+  });
+
+  return textNodes[0];
+}
+
+function collectTextNodes(node, textNodes) {
+  if (node.type === "TEXT") {
+    textNodes.push(node);
+    return;
+  }
+
+  if (!("children" in node)) {
+    return;
+  }
+
+  for (let i = 0; i < node.children.length; i += 1) {
+    collectTextNodes(node.children[i], textNodes);
+  }
+}
+
+async function loadFontsForTextNode(textNode) {
+  const length = textNode.characters.length;
+  if (length === 0) {
+    return;
+  }
+
+  const fonts = textNode.getRangeAllFontNames(0, length);
+  const seen = {};
+
+  for (let i = 0; i < fonts.length; i += 1) {
+    const key = fonts[i].family + "::" + fonts[i].style;
+    if (seen[key]) {
+      continue;
+    }
+
+    seen[key] = true;
+    await figma.loadFontAsync(fonts[i]);
+  }
+}
+
+function getResolvedFontName(textNode) {
+  if (textNode.fontName !== figma.mixed) {
+    return textNode.fontName;
+  }
+
+  return getFirstTextStyleSegment(textNode).fontName;
+}
+
+function getTextStyleSnapshot(textNode) {
+  const segment = getFirstTextStyleSegment(textNode);
+
+  return {
+    fontName: textNode.fontName !== figma.mixed ? textNode.fontName : segment.fontName,
+    fontSize: textNode.fontSize !== figma.mixed ? textNode.fontSize : segment.fontSize,
+    lineHeight: textNode.lineHeight !== figma.mixed ? cloneObjectIfNeeded(textNode.lineHeight) : cloneObjectIfNeeded(segment.lineHeight),
+    letterSpacing:
+      textNode.letterSpacing !== figma.mixed
+        ? cloneObjectIfNeeded(textNode.letterSpacing)
+        : cloneObjectIfNeeded(segment.letterSpacing),
+    fills: getUsableFills(textNode)
+  };
+}
+
+function getFirstTextStyleSegment(textNode) {
+  const length = Math.max(1, textNode.characters.length);
+  const segments = textNode.getStyledTextSegments(
+    ["fontName", "fontSize", "lineHeight", "letterSpacing"],
+    0,
+    length
+  );
+
+  if (!segments || segments.length === 0) {
+    throw new Error("Could not resolve text styles from the selected text layer.");
+  }
+
+  return segments[0];
+}
+
+function cloneObjectIfNeeded(value) {
+  if (value == null || typeof value !== "object") {
+    return value;
+  }
+
+  return copyObject(value);
+}
+
+function getStyleDescription(textNode) {
+  if (textNode.textStyleId && textNode.textStyleId !== figma.mixed) {
+    const style = figma.getStyleById(textNode.textStyleId);
+    if (style) {
+      return "Text style: " + style.name;
+    }
+  }
+
+  const fontName = getResolvedFontName(textNode);
+  return "Unlinked: " + fontName.family + " / " + fontName.style;
+}
+
+function truncateText(text, maxLength) {
+  const normalized = String(text).replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return normalized.slice(0, maxLength - 1) + "\u2026";
 }
 
 function makeLayerBlurEffect(radius) {
