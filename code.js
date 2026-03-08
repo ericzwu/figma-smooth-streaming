@@ -264,10 +264,10 @@ async function generateSmoothTextSet(settings) {
       chunkNode.y = 0;
       applyChunkVisibility(chunkNode, chunks[chunkIndex].start, chunks[chunkIndex].end);
 
-      if (chunkIndex <= i) {
+      if (chunkIndex < revealStates[i].revealedChunkCount) {
         chunkNode.opacity = 1;
         chunkNode.effects = [];
-      } else if (chunkIndex === i + 1) {
+      } else if (chunkIndex === revealStates[i].revealedChunkCount) {
         chunkNode.opacity = 0;
         chunkNode.effects = makeLayerBlurEffect(BLUR_IN_RADIUS);
       } else {
@@ -356,7 +356,13 @@ function validateSettings(settings) {
 function buildRevealPlan(text, streamMode, streamCount) {
   const units = streamMode === "letters" ? tokenizeLetters(text) : tokenizeWords(text);
   const chunks = [];
-  const revealStates = [];
+  const revealStates = [
+    {
+      text: "",
+      unitCount: 0,
+      revealedChunkCount: 0
+    }
+  ];
   let current = "";
 
   for (let i = 0; i < units.length; i += streamCount) {
@@ -374,11 +380,12 @@ function buildRevealPlan(text, streamMode, streamCount) {
 
     revealStates.push({
       text: current,
-      unitCount: slice.length
+      unitCount: slice.length,
+      revealedChunkCount: chunks.length
     });
   }
 
-  if (revealStates.length === 0) {
+  if (revealStates.length === 1) {
     chunks.push({
       start: 0,
       end: text.length,
@@ -386,7 +393,8 @@ function buildRevealPlan(text, streamMode, streamCount) {
     });
     revealStates.push({
       text: text,
-      unitCount: 1
+      unitCount: 1,
+      revealedChunkCount: 1
     });
   }
 
