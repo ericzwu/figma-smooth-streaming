@@ -985,8 +985,9 @@ function applyChunkVisibility(textNode, start, end, sourceVisibleFills) {
 }
 
 function getUsableFills(textNode) {
-  if (textNode.fills !== figma.mixed) {
-    return clonePaints(textNode.fills);
+  const styleFills = getLinkedTextStyleFills(textNode);
+  if (styleFills) {
+    return styleFills;
   }
 
   const segments = textNode.getStyledTextSegments(["fills"], 0, textNode.characters.length);
@@ -997,7 +998,32 @@ function getUsableFills(textNode) {
     }
   }
 
+  if (textNode.fills !== figma.mixed) {
+    return clonePaints(textNode.fills);
+  }
+
   throw new Error("Could not determine text fills.");
+}
+
+function getLinkedTextStyleFills(textNode) {
+  if (!textNode.textStyleId || textNode.textStyleId === figma.mixed) {
+    return null;
+  }
+
+  const style = figma.getStyleById(textNode.textStyleId);
+  if (!style) {
+    return null;
+  }
+
+  if ("paints" in style && Array.isArray(style.paints) && style.paints.length > 0) {
+    return clonePaints(style.paints);
+  }
+
+  if ("fills" in style && Array.isArray(style.fills) && style.fills.length > 0) {
+    return clonePaints(style.fills);
+  }
+
+  return null;
 }
 
 function getOrderedVariants(componentSet, propertyName) {
@@ -1098,15 +1124,15 @@ function copyObject(source) {
 }
 
 function makeSolidPaint(hex) {
-  const rgb = hexToRgb(hex);
+  const rgba = hexToRgba(hex);
   return {
     type: "SOLID",
     color: {
-      r: rgb.r / 255,
-      g: rgb.g / 255,
-      b: rgb.b / 255
+      r: rgba.r / 255,
+      g: rgba.g / 255,
+      b: rgba.b / 255
     },
-    opacity: 1
+    opacity: rgba.a
   };
 }
 
@@ -1136,7 +1162,8 @@ async function getSelectedTextSource() {
     lineHeight: styleSnapshot.lineHeight,
     letterSpacing: styleSnapshot.letterSpacing,
     fills: styleSnapshot.fills,
-    textStyleId: textNode.textStyleId !== figma.mixed ? textNode.textStyleId || "" : ""
+    textStyleId: textNode.textStyleId !== figma.mixed ? textNode.textStyleId || "" : "",
+    opacity: typeof textNode.opacity === "number" ? textNode.opacity : 1
   };
 }
 
@@ -1151,7 +1178,7 @@ async function getPopulateSettingsFromSelection() {
     fontSize: source.fontSize,
     lineHeightPx: getLineHeightPx(source.lineHeight, source.fontSize),
     letterSpacingPx: getLetterSpacingPx(source.letterSpacing, source.fontSize),
-    textColor: fillsToEditableColor(source.fills)
+    textColor: fillsToEditableColor(source.fills, source.opacity)
   };
 }
 
@@ -1337,14 +1364,14 @@ function getLetterSpacingPx(letterSpacing, fontSize) {
   return 0;
 }
 
-function fillsToEditableColor(fills) {
+function fillsToEditableColor(fills, nodeOpacity) {
   if (!fills || fills.length === 0) {
     return DEFAULT_SETTINGS.textColor;
   }
 
   for (let i = 0; i < fills.length; i += 1) {
     if (fills[i].type === "SOLID" && fills[i].color) {
-      return rgbToHex(fills[i].color);
+      return rgbaToHex(fills[i].color, getEffectivePaintOpacity(fills[i], nodeOpacity));
     }
   }
 
@@ -1358,13 +1385,30 @@ function rgbToHex(color) {
   return "#" + r + g + b;
 }
 
+function rgbaToHex(color, opacity) {
+  const base = rgbToHex(color);
+  const normalizedOpacity = clamp01(opacity);
+
+  if (Math.abs(normalizedOpacity - 1) < 0.0001) {
+    return base;
+  }
+
+  return base + toHexByte(normalizedOpacity);
+}
+
 function toHexChannel(value) {
   const channel = Math.max(0, Math.min(255, Math.round(Number(value) * 255)));
   const hex = channel.toString(16).toUpperCase();
   return hex.length === 1 ? "0" + hex : hex;
 }
 
-function hexToRgb(hex) {
+function toHexByte(value) {
+  const channel = Math.max(0, Math.min(255, Math.round(Number(value) * 255)));
+  const hex = channel.toString(16).toUpperCase();
+  return hex.length === 1 ? "0" + hex : hex;
+}
+
+function hexToRgba(hex) {
   const normalized = String(hex).trim().replace(/^#/, "");
   const expanded =
     normalized.length === 3
@@ -1374,17 +1418,37 @@ function hexToRgb(hex) {
         normalized.charAt(1) +
         normalized.charAt(2) +
         normalized.charAt(2)
+      : normalized.length === 4
+        ? normalized.charAt(0) +
+          normalized.charAt(0) +
+          normalized.charAt(1) +
+          normalized.charAt(1) +
+          normalized.charAt(2) +
+          normalized.charAt(2) +
+          normalized.charAt(3) +
+          normalized.charAt(3)
       : normalized;
 
-  if (!/^[0-9a-fA-F]{6}$/.test(expanded)) {
-    throw new Error("Text color must be a 3-digit or 6-digit hex value.");
+  if (!/^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(expanded)) {
+    throw new Error("Text color must be a 3, 4, 6, or 8-digit hex value.");
   }
 
   return {
     r: parseInt(expanded.slice(0, 2), 16),
     g: parseInt(expanded.slice(2, 4), 16),
-    b: parseInt(expanded.slice(4, 6), 16)
+    b: parseInt(expanded.slice(4, 6), 16),
+    a: expanded.length === 8 ? parseInt(expanded.slice(6, 8), 16) / 255 : 1
   };
+}
+
+function getEffectivePaintOpacity(paint, nodeOpacity) {
+  const paintOpacity = typeof paint.opacity === "number" ? paint.opacity : 1;
+  const layerOpacity = typeof nodeOpacity === "number" ? nodeOpacity : 1;
+  return clamp01(paintOpacity * layerOpacity);
+}
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number(value)));
 }
 
 function makeLayerBlurEffect(radius) {
