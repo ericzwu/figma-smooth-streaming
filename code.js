@@ -24,15 +24,45 @@ const ui = String.raw`
 <head>
   <meta charset="utf-8" />
   <style>
+    :root {
+      --bg: #fafafa;
+      --panel: rgba(255, 255, 255, 0.9);
+      --panel-strong: #ffffff;
+      --text: #111111;
+      --text-soft: #666666;
+      --text-faint: #888888;
+      --border: rgba(0, 0, 0, 0.08);
+      --border-strong: rgba(0, 0, 0, 0.14);
+      --focus: rgba(0, 0, 0, 0.18);
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.04);
+      --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+      --radius-sm: 10px;
+      --radius-md: 14px;
+      --radius-lg: 18px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      background:
+        radial-gradient(circle at top, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0) 36%),
+        linear-gradient(180deg, #fcfcfc 0%, #f6f6f6 100%);
+    }
+
     body {
-      font: 12px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 16px;
-      color: #222;
+      font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 18px;
+      color: var(--text);
+      background: transparent;
+      -webkit-font-smoothing: antialiased;
     }
 
     form {
       display: grid;
-      gap: 12px;
+      gap: 14px;
     }
 
     label {
@@ -40,42 +70,148 @@ const ui = String.raw`
       gap: 6px;
     }
 
+    .shell {
+      display: grid;
+      gap: 16px;
+    }
+
+    .hero {
+      display: grid;
+      gap: 6px;
+      padding: 2px 2px 4px;
+    }
+
+    .eyebrow {
+      color: var(--text-faint);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .title {
+      margin: 0;
+      font-size: 21px;
+      line-height: 1.1;
+      font-weight: 600;
+      letter-spacing: -0.03em;
+      text-wrap: balance;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--text-soft);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .section {
+      display: grid;
+      gap: 12px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+    }
+
+    .section:first-of-type {
+      padding-top: 0;
+      border-top: 0;
+    }
+
+    .section-header {
+      display: grid;
+      gap: 2px;
+    }
+
+    .section-title {
+      margin: 0;
+      font-size: 12px;
+      line-height: 1.3;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .section-copy {
+      margin: 0;
+      color: var(--text-soft);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .field-label {
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+    }
+
+    .field-hint {
+      color: var(--text-faint);
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
     textarea,
     input,
     select,
     button {
       font: inherit;
-      padding: 8px 10px;
-      border-radius: 8px;
-      border: 1px solid #d0d0d0;
-      background: #fff;
-      box-sizing: border-box;
+      border-radius: var(--radius-md);
       width: 100%;
+    }
+
+    textarea,
+    input,
+    select {
+      min-height: 40px;
+      padding: 10px 12px;
+      color: var(--text);
+      border: 1px solid transparent;
+      background: var(--panel-strong);
+      box-shadow: inset 0 0 0 1px var(--border);
+      outline: none;
+      transition: box-shadow 150ms ease, border-color 150ms ease, background-color 150ms ease;
+    }
+
+    textarea::placeholder,
+    input::placeholder {
+      color: #9b9b9b;
+    }
+
+    textarea:focus,
+    input:focus,
+    select:focus {
+      box-shadow: inset 0 0 0 1px var(--border-strong), 0 0 0 0 1px transparent;
+      border-color: var(--focus);
+    }
+
+    input[type="number"] {
+      font-variant-numeric: tabular-nums;
     }
 
     .grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 12px;
+      gap: 10px;
     }
 
     textarea {
-      min-height: 120px;
+      min-height: 132px;
       resize: vertical;
     }
 
     .source-card {
       padding: 12px;
-      border: 1px solid #d0d0d0;
-      border-radius: 10px;
-      background: #fafafa;
+      border-radius: 16px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 248, 248, 0.94));
+      box-shadow: inset 0 0 0 1px var(--border);
       display: grid;
-      gap: 6px;
+      gap: 7px;
     }
 
     .source-card[data-state="missing"] {
-      border-color: #f0c2c2;
-      background: #fff6f6;
+      background: linear-gradient(180deg, #fff8f8, #fff4f4);
+      box-shadow: inset 0 0 0 1px rgba(180, 35, 24, 0.14);
     }
 
     .source-row {
@@ -84,29 +220,66 @@ const ui = String.raw`
     }
 
     .source-label {
-      color: #666;
+      color: var(--text-faint);
       margin-right: 6px;
     }
 
     button {
-      background: #111;
-      color: #fff;
       border: 0;
       cursor: pointer;
+      min-height: 40px;
+      padding: 10px 14px;
+      transition: transform 120ms ease, box-shadow 160ms ease, background-color 160ms ease, color 160ms ease;
+    }
+
+    button:active {
+      transform: scale(0.985);
+    }
+
+    .button-secondary {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.84);
+      box-shadow: inset 0 0 0 1px var(--border);
+    }
+
+    .button-secondary:hover:not([disabled]) {
+      background: rgba(255, 255, 255, 0.98);
+      box-shadow: inset 0 0 0 1px var(--border-strong);
+    }
+
+    .button-primary {
+      color: #ffffff;
+      background: linear-gradient(180deg, #171717, #0c0c0c);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    }
+
+    .button-primary:hover:not([disabled]) {
+      background: linear-gradient(180deg, #202020, #101010);
     }
 
     button[disabled] {
       cursor: wait;
-      opacity: 0.7;
+      opacity: 0.72;
+      transform: none;
+    }
+
+    .actions {
+      display: grid;
+      gap: 10px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
     }
 
     .status {
-      min-height: 18px;
-      color: #666;
+      min-height: 20px;
+      padding: 0 2px;
+      color: var(--text-soft);
+      font-size: 12px;
+      line-height: 1.5;
     }
 
     .status[data-state="loading"] {
-      color: #222;
+      color: var(--text);
     }
 
     .status[data-state="error"] {
@@ -118,7 +291,7 @@ const ui = String.raw`
       width: 12px;
       height: 12px;
       margin-right: 8px;
-      border: 2px solid rgba(0, 0, 0, 0.18);
+      border: 2px solid rgba(0, 0, 0, 0.14);
       border-top-color: #111;
       border-radius: 999px;
       animation: spin 700ms linear infinite;
@@ -137,91 +310,156 @@ const ui = String.raw`
 
     p {
       margin: 0;
-      color: #666;
+      color: var(--text-soft);
+    }
+
+    .footer-note {
+      color: var(--text-faint);
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 360px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
 <body>
-  <form id="form">
-    <label>Selected source
-      <div id="sourceInfo" class="source-card" data-state="missing">Select a text layer or a frame containing a text layer.</div>
-    </label>
-
-    <button id="refreshSource" type="button">Populate from selection</button>
-
-    <label>Text
-      <textarea name="text"></textarea>
-    </label>
-
-    <div class="grid">
-      <label>Text width
-        <input name="textWidth" type="number" min="1" />
-      </label>
-      <label>Max viewport height
-        <input name="viewportHeight" type="number" min="1" />
-      </label>
+  <div class="shell">
+    <div class="hero">
+      <div class="eyebrow">Prototype Tools</div>
+      <h1 class="title">Smooth Stream Scroll</h1>
+      <p class="subtitle">Build a staged text component set from your selection, then tune typography and playback before generation.</p>
     </div>
 
-    <div class="grid">
-      <label>Font family
-        <select name="fontFamily"></select>
-      </label>
-      <label>Font style
-        <select name="fontStyle"></select>
-      </label>
-    </div>
+    <form id="form">
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Source</h2>
+          <p class="section-copy">Pull text and type settings from the selected frame or text layer, then edit them before generating.</p>
+        </div>
 
-    <div class="grid">
-      <label>Font size
-        <input name="fontSize" type="number" min="1" step="0.1" />
-      </label>
-      <label>Line height px
-        <input name="lineHeightPx" type="number" min="0" step="0.1" placeholder="Auto" />
-      </label>
-    </div>
+        <label>
+          <span class="field-label">Selected source</span>
+          <div id="sourceInfo" class="source-card" data-state="missing">Select a text layer or a frame containing a text layer.</div>
+        </label>
 
-    <div class="grid">
-      <label>Letter spacing px
-        <input name="letterSpacingPx" type="number" step="0.1" />
-      </label>
-      <label>Stream
-        <select name="streamMode">
-          <option value="words">Words</option>
-          <option value="letters">Letters</option>
-        </select>
-      </label>
-    </div>
+        <button id="refreshSource" class="button-secondary" type="button">Populate from selection</button>
+      </section>
 
-    <div class="grid">
-      <label>Every
-        <input name="streamCount" type="number" min="1" />
-      </label>
-      <label>Speed ms per unit
-        <input name="speedMs" type="number" min="1" />
-      </label>
-    </div>
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Content</h2>
+          <p class="section-copy">This text becomes the fully rendered layout that each reveal state masks and animates.</p>
+        </div>
 
-    <div class="grid">
-      <label>Text color
-        <input name="textColor" type="text" />
-      </label>
-      <label>Name prefix
-        <input name="setName" type="text" placeholder="Optional" />
-      </label>
-    </div>
+        <label>
+          <span class="field-label">Text</span>
+          <textarea name="text"></textarea>
+        </label>
 
-    <label>Easing
-      <select name="easing">
-        <option value="LINEAR">Linear</option>
-        <option value="QUICK">Quick</option>
-        <option value="GENTLE">Gentle</option>
-      </select>
-    </label>
+        <div class="grid">
+          <label>
+            <span class="field-label">Text width</span>
+            <input name="textWidth" type="number" min="1" />
+          </label>
+          <label>
+            <span class="field-label">Max viewport height</span>
+            <input name="viewportHeight" type="number" min="1" />
+          </label>
+        </div>
+      </section>
 
-    <button type="submit">Generate component set</button>
-    <div id="status" class="status" data-state="idle"></div>
-    <p>The plugin builds a new text component set, hugs the text until it reaches the max height, and places a starter instance on the current page.</p>
-  </form>
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Typography</h2>
+          <p class="section-copy">Use available Figma fonts and styles, then adjust spacing and color for the generated set.</p>
+        </div>
+
+        <div class="grid">
+          <label>
+            <span class="field-label">Font family</span>
+            <select name="fontFamily"></select>
+          </label>
+          <label>
+            <span class="field-label">Font style</span>
+            <select name="fontStyle"></select>
+          </label>
+        </div>
+
+        <div class="grid">
+          <label>
+            <span class="field-label">Font size</span>
+            <input name="fontSize" type="number" min="1" step="0.1" />
+          </label>
+          <label>
+            <span class="field-label">Line height px</span>
+            <input name="lineHeightPx" type="number" min="0" step="0.1" placeholder="Auto" />
+          </label>
+        </div>
+
+        <div class="grid">
+          <label>
+            <span class="field-label">Letter spacing px</span>
+            <input name="letterSpacingPx" type="number" step="0.1" />
+          </label>
+          <label>
+            <span class="field-label">Text color</span>
+            <input name="textColor" type="text" />
+          </label>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Playback</h2>
+          <p class="section-copy">Control how much text streams per step and how quickly each reveal transition plays.</p>
+        </div>
+
+        <div class="grid">
+          <label>
+            <span class="field-label">Stream</span>
+            <select name="streamMode">
+              <option value="words">Words</option>
+              <option value="letters">Letters</option>
+            </select>
+          </label>
+          <label>
+            <span class="field-label">Easing</span>
+            <select name="easing">
+              <option value="LINEAR">Linear</option>
+              <option value="QUICK">Quick</option>
+              <option value="GENTLE">Gentle</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="grid">
+          <label>
+            <span class="field-label">Every</span>
+            <input name="streamCount" type="number" min="1" />
+          </label>
+          <label>
+            <span class="field-label">Speed ms per unit</span>
+            <input name="speedMs" type="number" min="1" />
+          </label>
+        </div>
+
+        <label>
+          <span class="field-label">Name prefix</span>
+          <input name="setName" type="text" placeholder="Optional" />
+        </label>
+      </section>
+
+      <div class="actions">
+        <button class="button-primary" type="submit">Generate component set</button>
+        <div id="status" class="status" data-state="idle"></div>
+        <p class="footer-note">The plugin builds a new text component set, hugs the text until it reaches the max height, and places a starter instance on the current page.</p>
+      </div>
+    </form>
+  </div>
 
   <script>
     var hasValidSource = false;
