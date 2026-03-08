@@ -153,3 +153,12 @@ This keeps the workflow editable and avoids tightly coupling generation to one s
 
 - [manifest.json](c:/Users/Eric/figma-smooth-scrolling-text/manifest.json)
 - [code.js](c:/Users/Eric/figma-smooth-scrolling-text/code.js)
+
+## How to run
+
+1. Download this repository (or git clone it) to your machine.
+2. If you downloaded a zip, unzip it and keep the folder somewhere stable.
+3. Open **Figma Desktop**.
+4. Go to **Plugins > Development > Import plugin from manifest...**
+5. Select this repo's `manifest.json` file.
+6. Open any Figma file, then run it from **Plugins > Development > Smooth Stream Scroll**.
