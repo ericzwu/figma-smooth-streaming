@@ -204,7 +204,6 @@ async function generateSmoothTextSet(settings) {
     heights.push(measureTextHeight(revealStates[i].text, settings, fontName));
   }
 
-  const interpolatedHeights = computeInterpolatedHeights(heights);
   const finalTextNode = createStyledTextNode(settings.text, settings, fontName);
 
   const parent = figma.currentPage;
@@ -231,7 +230,7 @@ async function generateSmoothTextSet(settings) {
     contentRoot.strokes = [];
     contentRoot.resizeWithoutConstraints(settings.textWidth, finalTextNode.height);
     contentRoot.x = 0;
-    contentRoot.y = round2(settings.viewportHeight - interpolatedHeights[i]);
+    contentRoot.y = round2(settings.viewportHeight - heights[i]);
 
     const stateTextNode = finalTextNode.clone();
     stateTextNode.x = 0;
@@ -415,28 +414,6 @@ function getUsableFills(textNode) {
   throw new Error("Could not determine text fills.");
 }
 
-function computeInterpolatedHeights(heights) {
-  const interpolated = heights.slice();
-
-  for (let i = 0; i < heights.length; ) {
-    let j = i;
-    while (j + 1 < heights.length && nearlyEqual(heights[j + 1], heights[i])) {
-      j += 1;
-    }
-
-    const runLength = j - i + 1;
-    const nextDelta = j + 1 < heights.length ? Math.max(0, heights[j + 1] - heights[i]) : 0;
-
-    for (let k = 0; k < runLength; k += 1) {
-      interpolated[i + k] = heights[i] + (nextDelta > 0 ? round2((nextDelta * k) / runLength) : 0);
-    }
-
-    i = j + 1;
-  }
-
-  return interpolated;
-}
-
 function getOrderedVariants(componentSet, propertyName) {
   const variants = componentSet.children.slice();
   return variants.sort(function (a, b) {
@@ -568,10 +545,6 @@ function copyObject(source) {
     }
   }
   return target;
-}
-
-function nearlyEqual(a, b) {
-  return Math.abs(a - b) < 0.5;
 }
 
 function round2(value) {
