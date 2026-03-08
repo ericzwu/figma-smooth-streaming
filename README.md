@@ -148,6 +148,8 @@ This keeps the workflow editable and avoids tightly coupling generation to one s
 - The generated set is built for the width and viewport settings used at generation time.
 - If width changes later, wrapping changes, so scroll behavior may no longer line up.
 - Figma prototype timing can still have some practical variance compared with external frame chaining.
+- Generation complexity is roughly `O(n^2)` relative to reveal chunks (`states x chunks`), so long texts can become heavy.
+- This plugin is intended for short-to-medium visual prototypes, not lengthy long-form text streams.
 
 ## Files
 
